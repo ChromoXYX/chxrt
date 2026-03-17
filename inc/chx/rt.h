@@ -80,6 +80,12 @@ struct chxrt_tree_st* chxrt_new();
 int chxrt_insert(struct chxrt_tree_st* tree, const char* key, size_t key_len,
                  void* value);
 
+int chxrt_find(const struct chxrt_tree_st* tree, const char* key,
+               size_t key_len, void** out);
+
+int chxrt_acquire(const struct chxrt_tree_st* tree, const char* key,
+                  size_t key_len, void** out);
+
 /**
  * @brief Compile inserted patterns into a compact lookup structure.
  *

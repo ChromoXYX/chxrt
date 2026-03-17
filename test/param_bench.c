@@ -736,8 +736,13 @@ int main(void) {
         pattern->tokens_n = 0;
         memset(pattern->tokens, 0, sizeof(pattern->tokens));
         assert(parse_pattern_tokens(pattern) == 0);
-        if (chxrt_insert(tree, pattern->pattern, strlen(pattern->pattern),
-                         (void*)pattern) == 0) {
+
+        void* slot = NULL;
+        int r = chxrt_acquire(tree, pattern->pattern, strlen(pattern->pattern),
+                              &slot);
+        assert(r >= 0);
+        if (r == 1) {
+            *(void**)slot = (void*)pattern;
             pattern->enabled = 1;
             active_patterns[active_pattern_n++] = pattern;
         } else {

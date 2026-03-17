@@ -72,6 +72,7 @@ static inline int faster_memcmp(const void* p1, const void* p2, size_t n) {
 
 typedef struct inode_s {
     bool is_param;
+    bool is_leaf;
     chxrt_param_type param_type;
 
     char* prefix;
@@ -91,6 +92,7 @@ typedef struct {
     uint32_t first_child;
     uint16_t n_children;
     bool is_param;
+    bool is_leaf;
     chxrt_param_type param_type;
 
 } cnode_t;
@@ -487,11 +489,102 @@ int chxrt_insert(struct chxrt_tree_st* tree, const char* key, size_t key_len,
             return -1;
     }
 
-    if (cur->user_data)
+    if (cur->is_leaf)
         return -1;
 
+    cur->is_leaf = true;
     cur->user_data = value;
     return 0;
+}
+
+static inode_t* find_static(inode_t* node, const char* str, size_t len) {
+    if (len == 0)
+        return node;
+
+    for (size_t i = 0; i < node->n_children; i++) {
+        if (node->children[i]->is_param)
+            return NULL;
+    }
+
+    for (size_t i = 0; i < node->n_children; i++) {
+        inode_t* child = node->children[i];
+        size_t cpl =
+            prefix_common_len(child->prefix, child->prefix_len, str, len);
+        if (cpl == 0)
+            continue;
+
+        if (cpl == child->prefix_len && cpl == len)
+            return child;
+
+        if (cpl == child->prefix_len)
+            return find_static(child, str + cpl, len - cpl);
+
+        return NULL;
+    }
+
+    return NULL;
+}
+
+static inode_t* find_param(inode_t* node, chxrt_param_type type) {
+    for (size_t i = 0; i < node->n_children; i++) {
+        if (!node->children[i]->is_param)
+            return NULL;
+        if (node->children[i]->param_type == type)
+            return node->children[i];
+        return NULL;
+    }
+    return NULL;
+}
+
+int chxrt_find(const struct chxrt_tree_st* tree, const char* key,
+               size_t key_len, void** out) {
+    if (tree->is_compiled)
+        return -1;
+
+    segment_t segs[MAX_SEGMENTS];
+    int n = parse_pattern(key, key_len, segs, MAX_SEGMENTS);
+    if (n < 0)
+        return -1;
+
+    inode_t* cur = tree->root;
+    for (int i = 0; i < n; i++) {
+        cur = segs[i].is_param ? find_param(cur, segs[i].param_type)
+                               : find_static(cur, segs[i].str, segs[i].len);
+        if (!cur)
+            return -1;
+    }
+
+    if (!cur->is_leaf)
+        return -1;
+
+    *out = &cur->user_data;
+    return 0;
+}
+
+int chxrt_acquire(const struct chxrt_tree_st* tree, const char* key,
+                  size_t key_len, void** out) {
+    if (tree->is_compiled)
+        return -1;
+
+    struct chxrt_tree_st* mtree = (struct chxrt_tree_st*)tree;
+
+    segment_t segs[MAX_SEGMENTS];
+    int n = parse_pattern(key, key_len, segs, MAX_SEGMENTS);
+    if (n < 0)
+        return -1;
+
+    inode_t* cur = mtree->root;
+    for (int i = 0; i < n; i++) {
+        cur = segs[i].is_param ? insert_param(cur, segs[i].param_type)
+                               : insert_static(cur, segs[i].str, segs[i].len);
+        if (!cur)
+            return -1;
+    }
+
+    int is_new = !cur->is_leaf;
+    cur->is_leaf = true;
+    *out = &cur->user_data;
+    return is_new;
 }
 
 int chxrt_compile(struct chxrt_tree_st* tree, size_t* heap_alloc_bytes) {
@@ -552,6 +645,7 @@ int chxrt_compile(struct chxrt_tree_st* tree, size_t* heap_alloc_bytes) {
         inode_t* nd = queue[i];
 
         compiled[i].is_param = nd->is_param;
+        compiled[i].is_leaf = nd->is_leaf;
         compiled[i].param_type = nd->param_type;
         compiled[i].user_data = nd->user_data;
         compiled[i].n_children = (uint32_t)nd->n_children;
@@ -695,7 +789,7 @@ int chxrt_lookup(const struct chxrt_tree_st* tree, const char* key,
         continue;
     }
 
-    if (__builtin_expect(!nodes[cur].user_data, 0))
+    if (__builtin_expect(!nodes[cur].is_leaf, 0))
         return -1;
 
     *out = nodes[cur].user_data;
