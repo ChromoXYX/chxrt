@@ -63,7 +63,7 @@ typedef struct chxrt_param_st chxrt_param;
  *
  * @return Non-NULL on success, NULL on allocation failure.
  */
-struct chxrt_tree_st* chxrt_new();
+[[nodiscard]] struct chxrt_tree_st* chxrt_new();
 
 /**
  * @brief Insert one route pattern and its associated user value.
@@ -81,10 +81,10 @@ int chxrt_insert(struct chxrt_tree_st* tree, const char* key, size_t key_len,
                  void* value);
 
 int chxrt_find(const struct chxrt_tree_st* tree, const char* key,
-               size_t key_len, void** out);
+               size_t key_len, void*** slot);
 
 int chxrt_acquire(const struct chxrt_tree_st* tree, const char* key,
-                  size_t key_len, void** out);
+                  size_t key_len, void*** slot);
 
 /**
  * @brief Compile inserted patterns into a compact lookup structure.
@@ -112,9 +112,10 @@ int chxrt_compile(struct chxrt_tree_st* tree, size_t* heap_alloc_bytes);
  * @return -2 when param_list capacity is insufficient.
  * @return -3 when parameter parsing fails (<int>/<uint> conversion error).
  */
-int chxrt_lookup(const struct chxrt_tree_st* tree, const char* key,
-                 size_t key_len, void** out, struct chxrt_param_st* param_list,
-                 size_t param_list_n);
+[[nodiscard]] int chxrt_lookup(const struct chxrt_tree_st* tree,
+                               const char* key, size_t key_len, void** out,
+                               struct chxrt_param_st* param_list,
+                               size_t param_list_n);
 
 /**
  * @brief Destroy a tree and release all owned memory.
@@ -124,3 +125,6 @@ int chxrt_lookup(const struct chxrt_tree_st* tree, const char* key,
  * @param tree Tree handle returned by chxrt_new().
  */
 void chxrt_delete(struct chxrt_tree_st* tree);
+
+void chxrt_visit(struct chxrt_tree_st* tree,
+                 void (*visitor)(void* node, void* ud), void* ud);

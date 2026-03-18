@@ -459,6 +459,29 @@ static bool parse_uint64(const char* s, size_t len, uint64_t* out) {
     return true;
 }
 
+static void visit_inode_leafs(inode_t* node, void (*visitor)(void*, void*),
+                              void* ud) {
+    if (!node)
+        return;
+
+    if (node->is_leaf)
+        visitor(node->user_data, ud);
+
+    for (size_t i = 0; i < node->n_children; i++)
+        visit_inode_leafs(node->children[i], visitor, ud);
+}
+
+static void visit_compiled_leafs(const cnode_t* nodes, size_t idx,
+                                 void (*visitor)(void*, void*), void* ud) {
+    const cnode_t* node = &nodes[idx];
+
+    if (node->is_leaf)
+        visitor(node->user_data, ud);
+
+    for (uint16_t i = 0; i < node->n_children; i++)
+        visit_compiled_leafs(nodes, node->first_child + i, visitor, ud);
+}
+
 struct chxrt_tree_st* chxrt_new(void) {
     chxrt_tree* t = calloc(1, sizeof(chxrt_tree));
     if (!t)
@@ -537,7 +560,7 @@ static inode_t* find_param(inode_t* node, chxrt_param_type type) {
 }
 
 int chxrt_find(const struct chxrt_tree_st* tree, const char* key,
-               size_t key_len, void** out) {
+               size_t key_len, void*** out) {
     if (tree->is_compiled)
         return -1;
 
@@ -562,7 +585,7 @@ int chxrt_find(const struct chxrt_tree_st* tree, const char* key,
 }
 
 int chxrt_acquire(const struct chxrt_tree_st* tree, const char* key,
-                  size_t key_len, void** out) {
+                  size_t key_len, void*** out) {
     if (tree->is_compiled)
         return -1;
 
@@ -806,4 +829,19 @@ void chxrt_delete(struct chxrt_tree_st* tree) {
         inode_free(tree->root);
     }
     free(tree);
+}
+
+void chxrt_visit(struct chxrt_tree_st* tree,
+                 void (*visitor)(void* node, void* ud), void* ud) {
+    if (!tree || !visitor)
+        return;
+
+    if (tree->is_compiled) {
+        if (!tree->compiled || tree->n_compiled == 0)
+            return;
+        visit_compiled_leafs(tree->compiled, 0, visitor, ud);
+        return;
+    }
+
+    visit_inode_leafs(tree->root, visitor, ud);
 }
